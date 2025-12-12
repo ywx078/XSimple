@@ -370,15 +370,23 @@
     hands.onResults(onResults);
 
     // 使用 MediaPipe Camera 启动摄像头帧回调
+    function showLoaderMessage(msg) {
+      const loader = document.getElementById('loader');
+      if (loader) loader.querySelector('div:last-child').textContent = msg;
+    }
+
     const cameraUtils = new Camera(videoElement, {
       onFrame: async () => { await hands.send({ image: videoElement }); },
       width: 640,
-      height: 480
+      height: 480,
+      // 尝试强制使用前置摄像头，减少 NotReadableError 场景
+      facingMode: 'user'
     });
 
     cameraUtils.start().catch(err => {
-      alert('摄像头启动失败，请确保允许摄像头权限并在 HTTPS 或 localhost 环境下运行。');
       console.error(err);
+      const reason = err && err.name ? `${err.name}: ${err.message || ''}` : `${err}`;
+      showLoaderMessage(`摄像头启动失败：${reason}。请关闭占用摄像头的应用，确认系统已允许浏览器使用摄像头，并在 HTTPS 下重新尝试。`);
     });
 
     // 动画循环
