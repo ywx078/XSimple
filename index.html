@@ -379,15 +379,44 @@
       onFrame: async () => { await hands.send({ image: videoElement }); },
       width: 640,
       height: 480,
-      // 尝试强制使用前置摄像头，减少 NotReadableError 场景
+      // 尝试优先前置摄像头
       facingMode: 'user'
     });
 
-    cameraUtils.start().catch(err => {
-      console.error(err);
-      const reason = err && err.name ? `${err.name}: ${err.message || ''}` : `${err}`;
-      showLoaderMessage(`摄像头启动失败：${reason}。请关闭占用摄像头的应用，确认系统已允许浏览器使用摄像头，并在 HTTPS 下重新尝试。`);
-    });
+    async function startHandsCamera() {
+      // 预检 getUserMedia，提前拿到更明确的错误信息
+      const constraints = {
+        video: {
+          facingMode: { ideal: 'user' },
+          width: { ideal: 640 },
+          height: { ideal: 480 }
+        }
+      };
+      let stream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia(constraints);
+        videoElement.srcObject = stream;
+        await videoElement.play().catch(()=>{});
+        // 立即释放，避免占用后续 Camera 内部再取流
+        stream.getTracks().forEach(t => t.stop());
+      } catch (err) {
+        const reason = err && err.name ? `${err.name}: ${err.message || ''}` : `${err}`;
+        showLoaderMessage(`摄像头预检失败：${reason}。请关闭占用摄像头的应用，确认系统已允许浏览器使用摄像头，并在 HTTPS 下重新尝试。`);
+        console.error('getUserMedia preflight error', err);
+        throw err;
+      }
+
+      try {
+        await cameraUtils.start();
+      } catch (err) {
+        const reason = err && err.name ? `${err.name}: ${err.message || ''}` : `${err}`;
+        showLoaderMessage(`摄像头启动失败：${reason}。请关闭占用摄像头的应用，确认系统已允许浏览器使用摄像头，并在 HTTPS 下重新尝试。`);
+        console.error('Camera start error', err);
+        throw err;
+      }
+    }
+
+    startHandsCamera();
 
     // 动画循环
     const clock = new THREE.Clock();
