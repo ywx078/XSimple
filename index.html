@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>XSimple - 多手势实时粒子系统</title>
+  <style>
+    html,body { margin:0; padding:0; height:100%; background:#000; font-family: "Segoe UI", Roboto, "Helvetica Neue", Arial; }
+    #canvas-container { position:fixed; inset:0; z-index:1; }
+    .input_video { display:none; }
+    #loader {
+      position:fixed; inset:0; background:#000; z-index:999; display:flex; flex-direction:column; justify-content:center; align-items:center; color:#0ff;
+      transition:opacity .4s;
+    }
+    .spinner { width:48px; height:48px; border:4px solid rgba(0,255,255,.12); border-top-color:#0ff; border-radius:50%; animation:spin 1s linear infinite; margin-bottom:18px; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    #fullscreen-btn {
+      position:fixed; right:20px; bottom:20px; z-index:10; padding:10px 14px; border-radius:18px; color:#fff;
+      background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.08); cursor:pointer; backdrop-filter: blur(6px);
+    }
+    #fullscreen-btn:hover { background:rgba(255,255,255,0.12); }
+    #branding { position:fixed; left:20px; bottom:20px; z-index:10; color:rgba(255,255,255,0.5); font-size:12px; pointer-events:none; }
+  </style>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "lil-gui": "https://unpkg.com/lil-gui@0.19.1/dist/lil-gui.esm.min.js"
+      }
+    }
+  </script>
+
+  <!-- MediaPipe scripts -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+</head>
+<body>
+  <div id="loader">
+    <div class="spinner"></div>
+    <div>XSimple 系统初始化中... 请允许摄像头权限</div>
+  </div>
+
+  <div id="canvas-container"></div>
+  <video class="input_video"></video>
+
+  <button id="fullscreen-btn">⛶ 全屏</button>
+  <div id="branding">Developed by XSimple</div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import GUI from 'lil-gui';
+
+    // 配置
+    const CONFIG = {
+      particleCount: 15000,
+      particleSize: 0.12,
+      color: '#00ffff',
+      model: 'Heart'
+    };
+
+    // Three.js 初始化
+    const container = document.getElementById('canvas-container');
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.FogExp2(0x000000, 0.02);
+
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 2000);
+    camera.position.z = 40;
+
+    const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    container.appendChild(renderer.domElement);
+
+    // 粒子系统
+    let particles, geometry;
+    const targetPositions = new Float32Array(CONFIG.particleCount * 3);
+
+    function initParticles() {
+      geometry = new THREE.BufferGeometry();
+      const positions = new Float32Array(CONFIG.particleCount * 3);
+      for (let i = 0; i < CONFIG.particleCount * 3; i++) {
+        positions[i] = (Math.random() - 0.5) * 100;
+      }
+      geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      const material = new THREE.PointsMaterial({
+        color: CONFIG.color,
+        size: CONFIG.particleSize,
+        transparent: true,
+        opacity: 0.9,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      });
+      particles = new THREE.Points(geometry, material);
+      scene.add(particles);
+      generateModel(CONFIG.model);
+    }
+
+    // 生成模型（将目标位置写入 targetPositions）
+    function generateModel(type) {
+      const count = CONFIG.particleCount;
+      for (let i = 0; i < count; i++) {
+        const i3 = i * 3;
+        let x=0,y=0,z=0;
+        if (type === 'Heart') {
+          const t = Math.random() * Math.PI * 2;
+          const r = Math.sqrt(Math.random());
+          const scale = 1.4;
+          x = 16 * Math.pow(Math.sin(t),3) * scale;
+          y = (13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t)) * scale;
+          z = (Math.random() - 0.5) * 4;
+          x *= r; y *= r; z *= r;
+        } else if (type === 'Flower') {
+          const theta = Math.random() * Math.PI * 2;
+          const phi = Math.random() * Math.PI;
+          const k = 5;
+          const r = 10 * Math.cos(k * theta) * Math.sin(phi) + 2;
+          x = r * Math.sin(phi) * Math.cos(theta);
+          y = r * Math.sin(phi) * Math.sin(theta);
+          z = r * Math.cos(phi) * 0.5;
+        } else if (type === 'Saturn') {
+          const isRing = Math.random() > 0.4;
+          if (isRing) {
+            const angle = Math.random() * Math.PI * 2;
+            const radius = 12 + Math.random() * 6;
+            x = Math.cos(angle) * radius;
+            z = Math.sin(angle) * radius;
+            y = (Math.random() - 0.5) * 0.5;
+          } else {
+            const theta = Math.random() * Math.PI * 2;
+            const phi = Math.acos(2 * Math.random() - 1);
+            const rad = 7;
+            x = rad * Math.sin(phi) * Math.cos(theta);
+            y = rad * Math.sin(phi) * Math.sin(theta);
+            z = rad * Math.cos(phi);
+          }
+          const tempX = x;
+          const tilt = 0.4;
+          x = tempX * Math.cos(tilt) - y * Math.sin(tilt);
+          y = tempX * Math.sin(tilt) + y * Math.cos(tilt);
+        } else if (type === 'Buddha') {
+          const t = Math.random() * Math.PI * 2 * 10;
+          const p = 2, q = 3;
+          x = (8 + Math.cos(q*t)) * Math.cos(p*t);
+          y = (8 + Math.cos(q*t)) * Math.sin(p*t);
+          z = Math.sin(q*t) * 4;
+          const tx = x; x = z; z = tx;
+        } else if (type === 'Fireworks') {
+          const theta = Math.random() * Math.PI * 2;
+          const phi = Math.acos(2 * Math.random() - 1);
+          const rad = Math.random() * 20;
+          x = rad * Math.sin(phi) * Math.cos(theta);
+          y = rad * Math.sin(phi) * Math.sin(theta);
+          z = rad * Math.cos(phi);
+        }
+        targetPositions[i3] = x;
+        targetPositions[i3+1] = y;
+        targetPositions[i3+2] = z;
+      }
+    }
+
+    initParticles();
+
+    // GUI (保存控制器引用便于程序内更新)
+    const gui = new GUI({ title: 'XSimple 控制台' });
+    const modelController = gui.add(CONFIG, 'model', ['Heart','Flower','Saturn','Buddha','Fireworks']).name('模型').onChange(val => generateModel(val));
+    const colorController = gui.addColor(CONFIG, 'color').name('粒子颜色').onChange(val => {
+      particles.material.color.set(val);
+    });
+    gui.add(CONFIG, 'particleSize', 0.02, 0.6).name('粒子大小').onChange(val => particles.material.size = val);
+
+    const statusFolder = gui.addFolder('实时手势');
+    const gestureStatus = { state: '等待手势...', spread: 1.00 };
+    statusFolder.add(gestureStatus, 'state').name('当前手势').listen();
+    statusFolder.add(gestureStatus, 'spread').name('扩散系数').listen();
+
+    // MediaPipe Hands 设置与手势检测辅助函数
+    const videoElement = document.getElementsByClassName('input_video')[0];
+    let handScaleFactor = 1.0;
+    let isHandDetected = false;
+
+    // 辅助：2D 距离（归一化坐标系）
+    function dist2D(a, b) {
+      const dx = a.x - b.x;
+      const dy = a.y - b.y;
+      return Math.sqrt(dx*dx + dy*dy);
+    }
+
+    const FINGER_INDEX = {
+      thumb: { tip: 4, pip: 3 },
+      index: { tip: 8, pip: 6 },
+      middle: { tip: 12, pip: 10 },
+      ring: { tip: 16, pip: 14 },
+      pinky: { tip: 20, pip: 18 }
+    };
+
+    // 手势含义（用于 UI 展示）
+    const GESTURE_TEXT = {
+      Pinch: '捏合缩放模型',
+      OpenPalm: '张开手掌放大',
+      Fist: '握拳缩小',
+      Victory: '剪刀手切换模型',
+      ThumbsUp: '点赞随机换色',
+      OK: 'OK 手势重置',
+      Unknown: '未知手势'
+    };
+
+    function gestureLabelToText(label) {
+      return GESTURE_TEXT[label] || GESTURE_TEXT.Unknown;
+    }
+
+    function formatGestureState(label0, label1) {
+      if (!label0) return '未检测到手';
+      const main = gestureLabelToText(label0);
+      if (label1) return `${main} | ${gestureLabelToText(label1)}`;
+      return main;
+    }
+
+    function isFingerExtended(landmarks, finger) {
+      const wrist = landmarks[0];
+      const tip = landmarks[finger.tip];
+      const pip = landmarks[finger.pip];
+      const dTip = dist2D(tip, wrist);
+      const dPip = dist2D(pip, wrist);
+      return dTip > dPip * 1.05;
+    }
+
+    function isPinching(landmarks) {
+      const d = dist2D(landmarks[4], landmarks[8]);
+      return d < 0.045;
+    }
+
+    function isVictory(landmarks) {
+      const idx = isFingerExtended(landmarks, FINGER_INDEX.index);
+      const mid = isFingerExtended(landmarks, FINGER_INDEX.middle);
+      const ring = isFingerExtended(landmarks, FINGER_INDEX.ring);
+      const pinky = isFingerExtended(landmarks, FINGER_INDEX.pinky);
+      return idx && mid && !ring && !pinky;
+    }
+
+    function isThumbsUp(landmarks) {
+      const thumbExt = isFingerExtended(landmarks, FINGER_INDEX.thumb);
+      const idx = isFingerExtended(landmarks, FINGER_INDEX.index);
+      const mid = isFingerExtended(landmarks, FINGER_INDEX.middle);
+      const ring = isFingerExtended(landmarks, FINGER_INDEX.ring);
+      const pinky = isFingerExtended(landmarks, FINGER_INDEX.pinky);
+      const thumbTip = landmarks[4];
+      const thumbMcp = landmarks[2];
+      const pointingUp = thumbTip.y < thumbMcp.y; // 注意：可能因镜像而反向
+      return thumbExt && !idx && !mid && !ring && !pinky && pointingUp;
+    }
+
+    function isOK(landmarks) {
+      const d = dist2D(landmarks[4], landmarks[8]);
+      return d < 0.05;
+    }
+
+    function detectHandGesture(landmarks) {
+      if (!landmarks) return 'Unknown';
+      if (isPinching(landmarks)) return 'Pinch';
+      if (isVictory(landmarks)) return 'Victory';
+      if (isThumbsUp(landmarks)) return 'ThumbsUp';
+      if (isOK(landmarks)) return 'OK';
+      const extCount = ['index','middle','ring','pinky'].reduce((cnt, name) => cnt + (isFingerExtended(landmarks, FINGER_INDEX[name]) ? 1 : 0), 0);
+      const thumbExt = isFingerExtended(landmarks, FINGER_INDEX.thumb);
+      if (extCount >= 3 && thumbExt) return 'OpenPalm';
+      if (extCount === 0 && !thumbExt) return 'Fist';
+      return 'Unknown';
+    }
+
+    function onResults(results) {
+      // 隐藏 Loader
+      const loader = document.getElementById('loader');
+      if (loader) {
+        loader.style.opacity = 0;
+        setTimeout(() => { try { loader.style.display = 'none'; } catch(e){} }, 400);
+      }
+
+      const multi = results.multiHandLandmarks || [];
+      if (multi.length === 0) {
+        isHandDetected = false;
+        handScaleFactor += (1.0 - handScaleFactor) * 0.05;
+        gestureStatus.state = '未检测到手';
+        gestureStatus.spread = handScaleFactor.toFixed(2);
+        return;
+      }
+
+      isHandDetected = true;
+      const h0 = multi[0];
+      const label0 = detectHandGesture(h0);
+      let label1 = null;
+      if (multi.length >= 2) label1 = detectHandGesture(multi[1]);
+
+      gestureStatus.state = formatGestureState(label0, label1);
+
+      switch (label0) {
+        case 'Pinch': {
+          const thumbTip = h0[4], indexTip = h0[8];
+          let distance = Math.sqrt(Math.pow(thumbTip.x - indexTip.x,2) + Math.pow(thumbTip.y - indexTip.y,2));
+          const minDist = 0.03, maxDist = 0.25;
+          let normalized = (distance - minDist) / (maxDist - minDist);
+          normalized = Math.max(0, Math.min(1, normalized));
+          const targetScale = 0.2 + normalized * 2.5;
+          handScaleFactor += (targetScale - handScaleFactor) * 0.12;
+          break;
+        }
+        case 'OpenPalm':
+          handScaleFactor += (2.0 - handScaleFactor) * 0.08;
+          break;
+        case 'Fist':
+          handScaleFactor += (0.3 - handScaleFactor) * 0.08;
+          break;
+        case 'Victory':
+          if (!window.__lastVictoryTime || (performance.now() - window.__lastVictoryTime) > 700) {
+            window.__lastVictoryTime = performance.now();
+            const models = ['Heart','Flower','Saturn','Buddha','Fireworks'];
+            const idx = models.indexOf(CONFIG.model);
+            const next = models[(idx + 1) % models.length];
+            CONFIG.model = next;
+            generateModel(next);
+            // 程序性更新 GUI 控件显示
+            try { modelController.setValue(next); } catch(e){}
+          }
+          break;
+        case 'ThumbsUp':
+          if (!window.__lastThumbsTime || (performance.now() - window.__lastThumbsTime) > 700) {
+            window.__lastThumbsTime = performance.now();
+            const randomColor = '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6,'0');
+            CONFIG.color = randomColor;
+            particles.material.color.set(randomColor);
+            try { colorController.setValue(randomColor); } catch(e){}
+          }
+          break;
+        case 'OK':
+          if (!window.__lastOKTime || (performance.now() - window.__lastOKTime) > 700) {
+            window.__lastOKTime = performance.now();
+            handScaleFactor = 1.0;
+            CONFIG.model = 'Heart';
+            generateModel('Heart');
+            CONFIG.color = '#00ffff';
+            particles.material.color.set(CONFIG.color);
+            try { modelController.setValue('Heart'); colorController.setValue(CONFIG.color); } catch(e){}
+          }
+          break;
+        default:
+          handScaleFactor += (1.0 - handScaleFactor) * 0.04;
+          break;
+      }
+
+      // 如果检测到两只手：使用两手距离控制额外缩放与旋转
+      if (multi.length >= 2) {
+        const w0 = multi[0][0], w1 = multi[1][0];
+        const dHands = dist2D(w0, w1);
+        const handDistNormalized = Math.max(0, Math.min(1, (dHands - 0.05) / 0.35));
+        const twoHandScale = 0.8 + handDistNormalized * 1.7;
+        handScaleFactor += (twoHandScale - handScaleFactor) * 0.06;
+
+        // 额外让粒子阵列随双手横向偏移轻微旋转
+        const cx = (w0.x + w1.x) / 2 - 0.5;
+        particles.rotation.y += cx * 0.02;
+      }
+
+      gestureStatus.spread = handScaleFactor.toFixed(2);
+    }
+
+    // 初始化 MediaPipe Hands
+    const hands = new Hands({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}` });
+    hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.55, minTrackingConfidence: 0.5 });
+    hands.onResults(onResults);
+
+    // 使用 MediaPipe Camera 启动摄像头帧回调
+    const cameraUtils = new Camera(videoElement, {
+      onFrame: async () => { await hands.send({ image: videoElement }); },
+      width: 640,
+      height: 480
+    });
+
+    cameraUtils.start().catch(err => {
+      alert('摄像头启动失败，请确保允许摄像头权限并在 HTTPS 或 localhost 环境下运行。');
+      console.error(err);
+    });
+
+    // 动画循环
+    const clock = new THREE.Clock();
+
+    function animate() {
+      requestAnimationFrame(animate);
+      const t = clock.getElapsedTime();
+      const positions = particles.geometry.attributes.position.array;
+
+      particles.rotation.y += 0.002;
+      particles.rotation.z = Math.sin(t * 0.2) * 0.08;
+
+      for (let i = 0; i < CONFIG.particleCount; i++) {
+        const i3 = i * 3;
+        const tx = targetPositions[i3];
+        const ty = targetPositions[i3 + 1];
+        const tz = targetPositions[i3 + 2];
+
+        const noise = Math.sin(t * 2 + i) * 0.05;
+        const finalTx = tx * handScaleFactor + noise;
+        const finalTy = ty * handScaleFactor + noise;
+        const finalTz = tz * handScaleFactor;
+
+        positions[i3]   += (finalTx - positions[i3]) * 0.08;
+        positions[i3+1] += (finalTy - positions[i3+1]) * 0.08;
+        positions[i3+2] += (finalTz - positions[i3+2]) * 0.08;
+      }
+
+      particles.geometry.attributes.position.needsUpdate = true;
+      renderer.render(scene, camera);
+    }
+
+    animate();
+
+    // 窗口适配与全屏按钮
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    document.getElementById('fullscreen-btn').addEventListener('click', () => {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(()=>{});
+      } else {
+        document.exitFullscreen().catch(()=>{});
+      }
+    });
+
+  </script>
+</body>
+</html>
